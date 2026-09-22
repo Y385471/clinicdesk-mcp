@@ -3,7 +3,7 @@
 **A self-hosted MCP server that lets Alexa+ run a dental clinic's front desk — and answer the 2am question a patient cannot type.**
 
 Built for the Alexa+ track of the Amazon Developer Hackathon.
-Streamable HTTP · MCP spec revision **2025-11-25** · 11 tools · Cloudflare Workers.
+Streamable HTTP · MCP spec revision **2025-11-25** · 11 tools · deploys to Cloudflare Workers or Vercel.
 
 ---
 
@@ -45,12 +45,34 @@ npm run dev                      # → http://localhost:8787/mcp
 npm test                         # 36 tests, including the triage safety battery
 ```
 
-Deploy:
+Deploy — it runs on either host, from the same source:
 
 ```bash
-npm run deploy                   # → https://clinicdesk-mcp.<account>.workers.dev
-npm run secrets:push             # SUPABASE_URL + SUPABASE_SERVICE_KEY from .dev.vars
+# Cloudflare Workers — one Durable Object per client, so sessions are stateful
+npm run deploy
+npm run secrets:push
 npm run smoke -- https://clinicdesk-mcp.<account>.workers.dev/mcp
+
+# Vercel — stateless function, static landing page
+npx vercel login                 # once
+npx vercel env add SUPABASE_URL production
+npx vercel env add SUPABASE_SERVICE_KEY production
+npx vercel deploy --prod
+npm run smoke -- https://<project>.vercel.app/mcp
+```
+
+`src/tools.ts` holds all eleven tools and knows nothing about either host;
+`src/index.ts` and `api/mcp.ts` are the two transports, about fifteen lines
+apart. The Worker keeps a session per client in a Durable Object. The Vercel
+function is stateless — `sessionIdGenerator: undefined`, a fresh server per
+request, JSON responses rather than an open SSE stream, since a function is
+billed for the time a stream stays open and no tool here pushes to the client.
+
+The Vercel function can be run and smoke-tested locally without a login:
+
+```bash
+npm run dev:vercel               # compiles api/ and serves it on :8799
+npm run smoke -- http://localhost:8799/api/mcp
 ```
 
 Three routes:
@@ -131,11 +153,13 @@ npm test
 ## How it is built
 
 ```
-src/index.ts    MCP server — 11 registerTool() definitions, transport, instructions
+src/tools.ts    The 11 tools and their instructions — host-agnostic
 src/clinic.ts   PostgREST client, slot generation, triage rules
-src/landing.ts  The page at / — live tool demo, no MCP client needed
+src/index.ts    Cloudflare Workers transport (Durable Object per session)
+api/mcp.ts      Vercel transport (stateless function)
+public/         index.html — the page at /, live tool demo, no MCP client needed
 test/           36 tests, mostly clinical safety
-scripts/        db setup and seeding, secret push, post-deploy smoke test
+scripts/        db setup and seeding, secret push, local Vercel run, smoke test
 ```
 
 - **Transport** — Streamable HTTP via `McpAgent` from `agents`, served at `/mcp`. `@modelcontextprotocol/sdk` negotiates **2025-11-25**, verified against a real client handshake, not assumed.

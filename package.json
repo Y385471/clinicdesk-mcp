@@ -10,7 +10,8 @@
     "cf-typegen": "wrangler types",
     "db:setup": "node scripts/setup-db.mjs",
     "secrets:push": "node scripts/push-secrets.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "dev:vercel": "tsc -p tsconfig.vercel-local.json && node scripts/vercel-local.cjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",

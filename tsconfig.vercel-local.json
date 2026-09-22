@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "module": "commonjs", "moduleResolution": "node", "target": "es2022",
+    "outDir": ".vercel-local", "rootDir": ".", "skipLibCheck": true,
+    "esModuleInterop": true, "allowSyntheticDefaultImports": true,
+    "types": ["node"], "strict": false
+  },
+  "include": ["api/mcp.ts", "src/tools.ts", "src/clinic.ts"]
+}

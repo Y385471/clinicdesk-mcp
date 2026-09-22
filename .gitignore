@@ -165,3 +165,7 @@ dist
 .env*
 !.env.example
 .wrangler/
+
+# local build of the Vercel function (npm run dev:vercel)
+.vercel-local/
+.vercel/

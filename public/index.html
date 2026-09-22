@@ -1,13 +1,4 @@
-/**
- * A real page at `/`.
- *
- * An MCP endpoint is not a website, so pasting the deploy URL into a browser
- * normally shows a 404 and looks broken — including to a judge checking the
- * link. This page proves the server is live, lists the tool surface, and lets
- * anyone exercise the triage rules against the running server without
- * installing an MCP client.
- */
-export const LANDING_HTML = /* html */ `<!doctype html>
+<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ClinicDesk MCP</title>
@@ -139,7 +130,7 @@ async function rpc(method, params, id) {
   const g = r.headers.get('mcp-session-id'); if (g) sid = g;
   const t = await r.text();
   if ((r.headers.get('content-type') || '').includes('event-stream')) {
-    const l = t.split('\\n').find(x => x.startsWith('data:'));
+    const l = t.split(String.fromCharCode(10)).find(x => x.startsWith('data:'));
     return l ? JSON.parse(l.slice(5)) : {};
   }
   return t ? JSON.parse(t) : {};
@@ -168,4 +159,4 @@ $('go').onclick = async () => {
   btn.disabled = false; btn.textContent = 'Ask';
 };
 </script>
-</body></html>`;
+</body></html>
