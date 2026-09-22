@@ -1,0 +1,29 @@
+{
+  "name": "clinicdesk-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "test": "vitest",
+    "cf-typegen": "wrangler types",
+    "db:setup": "node scripts/setup-db.mjs",
+    "secrets:push": "node scripts/push-secrets.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@types/node": "^26.6.2",
+    "typescript": "^5.5.2",
+    "vitest": "~4.1.0",
+    "wrangler": "^4.136.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "agents": "^0.24.0",
+    "zod": "^4.6.5"
+  },
+  "description": "MCP server that turns a dental clinic booking system and aftercare protocols into voice-ready tools for Alexa+",
+  "license": "MIT"
+}
