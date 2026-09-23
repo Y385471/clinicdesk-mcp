@@ -1,0 +1,274 @@
+<!doctype html>
+<!--
+  A simulated Alexa+ front end for ClinicDesk.
+
+  The voice layer is simulated (browser speech recognition and speech synthesis,
+  plus a small intent router). Everything it says comes from the real MCP server:
+  each turn is a JSON-RPC tools/call against /mcp, and the `speech` field the
+  server returns is read out verbatim, exactly as the server's instructions ask
+  an Alexa+ host to do. The call being made is printed under each turn so it is
+  never ambiguous which part is the voice shell and which is the server.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClinicDesk — simulated Alexa+</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#070b12;--panel:#0f1622;--line:#1e2a3a;--tx:#e8eef6;--dim:#8a9bb0;--cyan:#27d7ff;--blue:#3a7bff;--ok:#4ade80;--warn:#fbbf24;--red:#f87171}
+html,body{height:100%}
+body{background:radial-gradient(900px 500px at 50% -10%,#0f2440,transparent 70%),var(--bg);color:var(--tx);
+  font-family:"Segoe UI",system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center}
+header{width:100%;max-width:880px;padding:22px 20px 0;display:flex;align-items:center;gap:12px}
+header b{font-size:17px;letter-spacing:-.3px}
+header .tag{font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--cyan);border:1px solid #1b4b63;background:#082231;padding:4px 10px;border-radius:99px}
+header a{margin-left:auto;color:var(--dim);font-size:13px;text-decoration:none}
+header a:hover{color:var(--tx)}
+.stage{width:100%;max-width:880px;flex:1;display:flex;flex-direction:column;align-items:center;padding:16px 20px 20px;min-height:0}
+
+/* the ring */
+.ringwrap{position:relative;width:132px;height:132px;margin:14px 0 6px;flex:none}
+.ring{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,var(--blue),var(--cyan),var(--blue));
+  -webkit-mask:radial-gradient(circle,transparent 54%,#000 56%);mask:radial-gradient(circle,transparent 54%,#000 56%);opacity:.35;transition:opacity .3s}
+.glow{position:absolute;inset:-18px;border-radius:50%;background:radial-gradient(circle,rgba(39,215,255,.35),transparent 65%);opacity:0;transition:opacity .3s}
+.state-listening .ring{opacity:1;animation:spin 1.6s linear infinite}
+.state-thinking .ring{opacity:.8;animation:spin .7s linear infinite}
+.state-speaking .ring{opacity:1;animation:pulse 1s ease-in-out infinite}
+.state-listening .glow,.state-speaking .glow{opacity:1}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{50%{transform:scale(1.06)}}
+.status{font-size:13px;color:var(--dim);height:18px;margin-bottom:10px;letter-spacing:.3px}
+
+/* transcript */
+.log{width:100%;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:6px 2px 10px;min-height:120px}
+.turn{display:flex;flex-direction:column;gap:6px;animation:in .25s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(6px)}}
+.you{align-self:flex-end;background:#16233a;border:1px solid #243650;padding:10px 14px;border-radius:14px 14px 4px 14px;max-width:80%;font-size:15px}
+.call{align-self:flex-start;font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;color:#7fd3ff;background:#07131f;
+  border:1px solid #13324a;border-left:3px solid var(--cyan);padding:7px 11px;border-radius:8px;max-width:92%;overflow-x:auto;white-space:nowrap}
+.call .k{color:var(--dim)}
+.alexa{align-self:flex-start;background:var(--panel);border:1px solid var(--line);padding:11px 15px;border-radius:14px 14px 14px 4px;max-width:86%;font-size:15.5px;line-height:1.5}
+.alexa.urgent{border-color:#5b1f1f;background:#1d0e10}
+.alexa.call_clinic{border-color:#5a4513;background:#1a1409}
+.alexa.expected{border-color:#1d4a2f;background:#0b1a12}
+.badge{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:1.6px;margin-bottom:5px}
+.urgent .badge{color:var(--red)} .call_clinic .badge{color:var(--warn)} .expected .badge{color:var(--ok)}
+
+/* input */
+.chips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:8px 0 10px}
+.chips button{background:#0d1726;border:1px solid var(--line);color:var(--dim);font:inherit;font-size:12.5px;padding:7px 12px;border-radius:99px;cursor:pointer}
+.chips button:hover{border-color:var(--cyan);color:var(--tx)}
+form{width:100%;display:flex;gap:9px}
+form input{flex:1;background:#0d1726;border:1px solid var(--line);color:var(--tx);font:inherit;font-size:15px;padding:13px 15px;border-radius:12px;outline:none}
+form input:focus{border-color:var(--cyan)}
+.mic{width:50px;border-radius:12px;border:0;background:linear-gradient(140deg,var(--blue),var(--cyan));color:#021019;font-size:20px;cursor:pointer;flex:none}
+.mic[disabled]{opacity:.35;cursor:not-allowed}
+.send{padding:0 18px;border-radius:12px;border:1px solid var(--line);background:#101c2d;color:var(--tx);font:inherit;font-weight:600;cursor:pointer}
+.foot{font-size:11.5px;color:#5f7187;margin-top:10px;text-align:center;line-height:1.5}
+.foot code{color:#7fa3c7}
+@media(max-width:600px){.you,.alexa{max-width:94%}.ringwrap{width:104px;height:104px}}
+</style>
+</head>
+<body>
+<header>
+  <b>ClinicDesk</b><span class="tag">SIMULATED ALEXA+</span>
+  <a href="/">← server page</a>
+</header>
+
+<div class="stage" id="stage">
+  <div class="ringwrap"><div class="glow"></div><div class="ring"></div></div>
+  <div class="status" id="status">Tap the mic or type — every answer comes from the live MCP server.</div>
+  <div class="log" id="log"></div>
+  <div class="chips" id="chips"></div>
+  <form id="f" autocomplete="off">
+    <button type="button" class="mic" id="mic" title="Speak">🎙</button>
+    <input id="q" placeholder="Try: I had a tooth out yesterday and my cheek is swollen">
+    <button class="send">Send</button>
+  </form>
+  <p class="foot">Voice in and out is simulated in the browser. The answers are not: each turn is a
+    <code>tools/call</code> to <code>/mcp</code> (MCP 2025-11-25, Streamable HTTP), and the reply is the server's
+    <code>speech</code> field, read verbatim.</p>
+</div>
+
+<script>
+const EP = location.origin + '/mcp';
+const $ = (id) => document.getElementById(id);
+const stage = $('stage'), log = $('log');
+
+/* ------------------------------------------------------------ MCP client */
+let rid = 0;
+async function rpc(method, params) {
+  const r = await fetch(EP, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++rid, method, params }),
+  });
+  const text = await r.text();
+  const line = text.split('\n').find((l) => l.startsWith('data:'));
+  return JSON.parse(line ? line.slice(5) : text);
+}
+let ready = null;
+function init() {
+  ready ??= rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'clinicdesk-voice-sim', version: '1.0' } });
+  return ready;
+}
+async function callTool(name, args) {
+  await init();
+  showCall(name, args);
+  const res = await rpc('tools/call', { name, arguments: args });
+  const payload = JSON.parse(res.result.content[0].text);
+  payload.__error = !!res.result.isError;
+  return payload;
+}
+
+/* --------------------------------------------------------- understanding */
+const PROCS = [
+  [/wisdom/i, 'WISDOM'], [/implant/i, 'IMPLANT'], [/root canal/i, 'ROOTCANAL'],
+  [/tooth (out|pulled|removed|taken out)|extract|pulled|took (a|my) tooth/i, 'EXTRACTION'],
+  [/filling/i, 'FILLING'], [/crown/i, 'CROWN'], [/whiten/i, 'WHITENING'],
+  [/check-?up|clean(ing)?|scal(e|ing)/i, 'CHECKUP'], [/brace|orthodon|aligner/i, 'ORTHO'],
+];
+const procOf = (s) => (PROCS.find(([re]) => re.test(s)) || [])[1] || null;
+const WORDNUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+function daysOf(s) {
+  if (/\b(today|this morning|tonight|this afternoon)\b/i.test(s)) return 0;
+  if (/\b(yesterday|last night)\b/i.test(s)) return 1;
+  if (/\b(a|last) week\b/i.test(s)) return 7;
+  const m = s.match(/\b(\d+|one|two|three|four|five|six|seven)\s+days?\b/i);
+  return m ? (WORDNUM[m[1].toLowerCase()] ?? +m[1]) : null;
+}
+const SYMPTOM = /swell|swollen|bleed|blood|pain|hurt|ache|fever|temperature|numb|pus|swallow|throat|sensitive|bruis|throb|shiver|ooz/i;
+
+const memo = { procedure: null, days: null, awaiting: null, pendingSymptom: null, slots: null, bookProc: null };
+
+async function handle(utterance) {
+  const u = utterance.trim();
+  if (!u) return;
+  addYou(u);
+  setState('thinking');
+  try {
+    const p = procOf(u); if (p) memo.procedure = p;
+    const d = daysOf(u); if (d !== null) memo.days = d;
+
+    // A phone number while we are waiting for one completes a booking.
+    const digits = u.replace(/\D/g, '');
+    if (memo.awaiting === 'phone' && digits.length >= 8) {
+      memo.awaiting = null;
+      const who = await callTool('find_patient', { phone: u });
+      if (who.__error || !who.found) return say(who.speech || 'I could not find that number.');
+      await say(who.speech);
+      const slot = memo.slots[0];
+      const booked = await callTool('book_appointment', { patient_id: who.patient_id, procedure: memo.bookProc, starts_at: slot.starts_at, provider_id: slot.provider_id });
+      return say(booked.speech);
+    }
+
+    // Waiting for which treatment the symptom follows.
+    if (memo.awaiting === 'procedure' && memo.procedure) {
+      memo.awaiting = null;
+      return triage(memo.pendingSymptom);
+    }
+
+    if (/\b(where|address|open|hours|close|closing|phone number|emergency (line|number)|how do i get)\b/i.test(u)) {
+      const r = await callTool('get_clinic_info', {});
+      return say(r.speech);
+    }
+    if (/\b(what should i|aftercare|after-care|instructions|look after|take care)\b/i.test(u) && memo.procedure) {
+      const r = await callTool('get_aftercare', { procedure: memo.procedure });
+      return say(r.speech);
+    }
+    if (SYMPTOM.test(u)) {
+      if (!memo.procedure) {
+        memo.awaiting = 'procedure'; memo.pendingSymptom = u;
+        return say('I can check that against your clinic\'s aftercare notes. Which treatment did you have, and when?', true);
+      }
+      return triage(u);
+    }
+    if (/\b(book|appointment|see (a|the) dentist|slot|available|come in)\b/i.test(u)) {
+      memo.bookProc = procOf(u) || 'CHECKUP';
+      const r = await callTool('find_appointment_slots', { procedure: memo.bookProc, days_ahead: 7, limit: 3 });
+      if (!r.slots?.length) return say(r.speech);
+      memo.slots = r.slots; memo.awaiting = 'phone';
+      await say(r.speech);
+      return say('To book the first one, what is the phone number on your file?', true);
+    }
+    return say('I can check a symptom after your treatment, read your aftercare, book an appointment, or give you the clinic\'s details. What do you need?', true);
+  } catch (e) {
+    say('I could not reach the clinic system just now. Please try again.', true);
+    console.error(e);
+  }
+}
+
+async function triage(symptom) {
+  const r = await callTool('check_symptom', { symptom, procedure: memo.procedure, days_since: memo.days ?? 1 });
+  return say(r.speech, false, r.disposition);
+}
+
+/* ---------------------------------------------------------------- output */
+function addYou(t) { const d = el('div', 'turn'); d.append(el('div', 'you', t)); log.append(d); scroll(); }
+function showCall(name, args) {
+  const c = el('div', 'call');
+  c.innerHTML = `<span class="k">tools/call →</span> ${name}(${esc(JSON.stringify(args))})`;
+  log.lastElementChild.append(c); scroll();
+}
+function say(text, local = false, disposition = null) {
+  const b = el('div', 'alexa' + (disposition ? ' ' + disposition : ''));
+  if (disposition) b.append(el('span', 'badge', disposition.replace('_', ' ').toUpperCase()), el('br'));
+  b.append(document.createTextNode(text));
+  if (local) b.title = 'Spoken by the voice shell, not returned by a tool';
+  log.lastElementChild.append(b); scroll();
+  return speak(text);
+}
+function speak(text) {
+  return new Promise((done) => {
+    if (!('speechSynthesis' in window)) { setState('idle'); return done(); }
+    const u = new SpeechSynthesisUtterance(text);
+    const v = speechSynthesis.getVoices().find((x) => /en-(US|GB)/.test(x.lang) && /female|zira|samantha|aria|jenny|google us/i.test(x.name))
+      || speechSynthesis.getVoices().find((x) => /^en/.test(x.lang));
+    if (v) u.voice = v;
+    u.rate = 1.02;
+    u.onstart = () => setState('speaking');
+    u.onend = u.onerror = () => { setState('idle'); done(); };
+    speechSynthesis.speak(u);
+  });
+}
+function setState(s) {
+  stage.className = 'stage state-' + s;
+  $('status').textContent = { idle: 'Tap the mic or type — every answer comes from the live MCP server.', listening: 'Listening…', thinking: 'Asking the clinic system…', speaking: 'Speaking' }[s];
+}
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const scroll = () => { log.scrollTop = log.scrollHeight; };
+
+/* ----------------------------------------------------------------- input */
+$('f').onsubmit = (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; handle(v); };
+const CHIPS = [
+  'I had a tooth out yesterday and my cheek is swollen',
+  "I'm having trouble swallowing and my neck is swelling",
+  'The pain is much worse today, I had a wisdom tooth out four days ago',
+  'I need to book a check-up',
+  'Where are you and when are you open?',
+];
+$('chips').innerHTML = CHIPS.map((c) => `<button type="button">${c}</button>`).join('');
+$('chips').querySelectorAll('button').forEach((b) => (b.onclick = () => handle(b.textContent)));
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) $('mic').disabled = true;
+$('mic').onclick = () => {
+  if (!SR) return;
+  speechSynthesis.cancel();
+  const rec = new SR(); rec.lang = 'en-US'; rec.interimResults = false;
+  rec.onstart = () => setState('listening');
+  rec.onresult = (e) => handle(e.results[0][0].transcript);
+  rec.onerror = rec.onend = () => { if (stage.classList.contains('state-listening')) setState('idle'); };
+  rec.start();
+};
+speechSynthesis?.getVoices();
+setState('idle');
+
+/* Deep link for demos and judges: /voice.html?say=... runs one turn on load. */
+const q = new URLSearchParams(location.search).get('say');
+if (q) setTimeout(() => handle(q), 600);
+</script>
+</body>
+</html>
