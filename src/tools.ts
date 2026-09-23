@@ -15,7 +15,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { ClinicDb, buildSlots, normalisePhone, speakDateTime, triage, type Aftercare, type Env } from './clinic';
+import { ClinicDb, buildSlots, normalisePhone, speakDateTime, triage, type Aftercare, type Env } from './clinic.js';
 
 export const SERVER_INFO = { name: 'clinicdesk', version: '1.0.0' } as const;
 

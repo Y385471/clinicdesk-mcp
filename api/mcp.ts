@@ -14,12 +14,10 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { INSTRUCTIONS, SERVER_INFO, registerTools } from '../src/tools';
+import { INSTRUCTIONS, SERVER_INFO, registerTools } from '../src/tools.js';
 import type { Env } from '../src/clinic';
 
-export const config = { runtime: 'nodejs' };
-
-export default async function handler(request: Request): Promise<Response> {
+async function handle(request: Request): Promise<Response> {
 	const env = process.env as unknown as Env;
 	if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
 		// Fail loudly rather than answering every tool call with a type error.
@@ -42,3 +40,11 @@ export default async function handler(request: Request): Promise<Response> {
 	void server.close();
 	return response;
 }
+
+// Vercel only treats a function as Web-standard (Request in, Response out) when
+// it is exported under an HTTP method name. A plain default export is called
+// with Node's (req, res) instead, and then never answers — the request hangs
+// until the 300 s platform timeout.
+export const POST = handle;
+export const GET = handle;
+export const DELETE = handle;

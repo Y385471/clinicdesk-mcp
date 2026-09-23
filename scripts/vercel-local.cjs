@@ -14,7 +14,9 @@ for (const line of fs.readFileSync(path.join(root, '.dev.vars'), 'utf8').split('
 	if (m) process.env[m[1]] = m[2];
 }
 
-const handler = require(path.join(root, '.vercel-local/api/mcp.js')).default;
+const mod = require(path.join(root, '.vercel-local/api/mcp.js'));
+// Same dispatch Vercel does: the export named after the HTTP method.
+const pick = (method) => mod[method] || mod.default;
 const port = Number(process.env.PORT ?? 8799);
 
 http
@@ -26,7 +28,9 @@ http
 			headers: req.headers,
 			body: chunks.length ? Buffer.concat(chunks) : undefined,
 		});
-		const out = await handler(request);
+		const fn = pick(req.method);
+		if (!fn) { res.writeHead(405).end(); return; }
+		const out = await fn(request);
 		res.writeHead(out.status, Object.fromEntries(out.headers));
 		res.end(Buffer.from(await out.arrayBuffer()));
 	})

@@ -2,6 +2,7 @@
   "name": "clinicdesk-mcp",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
@@ -11,7 +12,7 @@
     "db:setup": "node scripts/setup-db.mjs",
     "secrets:push": "node scripts/push-secrets.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "dev:vercel": "tsc -p tsconfig.vercel-local.json && node scripts/vercel-local.cjs"
+    "dev:vercel": "tsc -p tsconfig.vercel-local.json && node -e \"require('fs').writeFileSync('.vercel-local/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node scripts/vercel-local.cjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",
