@@ -3,6 +3,9 @@
 **A self-hosted MCP server that lets Alexa+ run a dental clinic's front desk — and answer the 2am question a patient cannot type.**
 
 Built for the Alexa+ track of the Amazon Developer Hackathon.
+
+**Try it live:** [clinicdesk-mcp.vercel.app](https://clinicdesk-mcp.vercel.app) — type a symptom and the page calls the running server.
+**MCP endpoint:** `https://clinicdesk-mcp.vercel.app/mcp` — add it to any MCP host as a remote server.
 Streamable HTTP · MCP spec revision **2025-11-25** · 11 tools · deploys to Cloudflare Workers or Vercel.
 
 ---
@@ -34,7 +37,7 @@ The second one is a spreading infection heading for the airway. Getting that ans
 ## Quick start
 
 ```bash
-git clone <this repo> && cd clinicdesk-mcp
+git clone https://github.com/Y385471/clinicdesk-mcp && cd clinicdesk-mcp
 npm install
 
 # point it at your clinic database
