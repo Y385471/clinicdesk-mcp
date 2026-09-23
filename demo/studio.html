@@ -1,0 +1,337 @@
+<!doctype html>
+<!--
+  Renders and records the ClinicDesk demo video in the browser.
+
+  The Alexa+ lines are not written here: they are the `speech` fields the live
+  server returned (data.json, from capture.mjs), synthesized verbatim. Audio is
+  scheduled on one AudioContext clock and every frame is drawn from that same
+  clock, so picture and sound cannot drift. The canvas and the audio are
+  recorded together with MediaRecorder and POSTed to server.mjs.
+-->
+<html lang="en"><head><meta charset="utf-8"><title>ClinicDesk demo studio</title>
+<style>
+body{margin:0;background:#000;color:#ccc;font:14px "Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px}
+canvas{width:1280px;height:720px;display:block}
+.bar{display:flex;gap:10px;align-items:center}
+button{font:inherit;padding:8px 16px;border-radius:8px;border:0;background:#27d7ff;color:#021019;font-weight:700;cursor:pointer}
+#log{font-family:Consolas,monospace;font-size:12px;color:#8ab}
+</style></head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div class="bar"><button id="preview">Preview</button><button id="record">Record</button><span id="log">loading…</span></div>
+<script>
+const W = 1280, H = 720;
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+const logEl = document.getElementById('log');
+const say = (m) => (logEl.textContent = m);
+
+const C = { bg: '#070b12', panel: '#0f1622', line: '#1e2a3a', tx: '#e8eef6', dim: '#8a9bb0', cyan: '#27d7ff', blue: '#3a7bff', ok: '#4ade80', warn: '#fbbf24', red: '#f87171', you: '#16233a' };
+const F = (w, s) => `${w} ${s}px "Segoe UI", system-ui, sans-serif`;
+const MONO = (s) => `${s}px Consolas, "Cascadia Mono", monospace`;
+
+let data, buffers = {}, steps = [], total = 0, ac, t0 = null, recording = false;
+
+/* ------------------------------------------------------------- timeline */
+function buildTimeline() {
+  const T = data.turns;
+  const plan = [
+    { scene: 'title', clip: 'n1' },
+    { scene: 'pitch', clip: 'n2' },
+    { scene: 'chat', clip: 'p1', clear: true, you: 'Alexa, I had a tooth out yesterday and my cheek is swollen.' },
+    { scene: 'chat', clip: 'a1', call: T[0], alexa: T[0].speech, disp: 'expected' },
+    { scene: 'chat', clip: 'p2', clear: true, you: "Alexa, I'm having trouble swallowing and my neck is swelling." },
+    { scene: 'chat', clip: 'a2', call: T[1], alexa: T[1].speech, disp: 'urgent' },
+    { scene: 'bug', clip: 'n3' },
+    { scene: 'chat', clip: 'p3', clear: true, you: 'Alexa, I need to book a check-up.' },
+    { scene: 'chat', clip: 'a3', call: T[2], alexa: T[2].speech },
+    { scene: 'chat', clip: 'p4', clear: true, you: 'The first one. My number is 0100 123 4567.' },
+    { scene: 'chat', clip: 'a4', call: T[3], alexa: T[3].speech },
+    { scene: 'chat', clip: 'a5', call: T[4], alexa: T[4].speech },
+    { scene: 'arch', clip: 'n4' },
+    { scene: 'outro', clip: 'n5', hold: 2.8 },
+  ];
+  let t = 0.8, prev = null;
+  steps = plan.map((s) => {
+    const dur = buffers[s.clip].duration;
+    t += prev && prev.scene !== s.scene ? 0.35 : 0;          // a breath at scene changes
+    const step = { ...s, start: t, end: t + dur };
+    t = step.end + (s.hold ?? 0.45);
+    prev = s;
+    return step;
+  });
+  total = t + 0.4;
+}
+
+/* --------------------------------------------------------------- drawing */
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function wrap(text, maxW, font) {
+  g.font = font;
+  const words = text.split(' '), lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (g.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function background() {
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  const rg = g.createRadialGradient(640, -80, 40, 640, -80, 760);
+  rg.addColorStop(0, 'rgba(24,62,110,.55)'); rg.addColorStop(1, 'rgba(7,11,18,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, W, H);
+}
+function topbar(right = 'MCP 2025-11-25 · Streamable HTTP · live at clinicdesk-mcp.vercel.app') {
+  g.font = F(700, 19); g.fillStyle = C.tx; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  g.fillText('ClinicDesk MCP', 48, 50);
+  g.font = F(500, 14); g.fillStyle = C.dim; g.textAlign = 'right';
+  g.fillText(right, W - 48, 50);
+  g.textAlign = 'left';
+  g.fillStyle = C.line; g.fillRect(48, 66, W - 96, 1);
+}
+const ease = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+
+function ring(cx, cy, r, active, now) {
+  const glow = g.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 1.9);
+  glow.addColorStop(0, `rgba(39,215,255,${active ? 0.32 : 0.08})`); glow.addColorStop(1, 'rgba(39,215,255,0)');
+  g.fillStyle = glow; g.fillRect(cx - r * 2, cy - r * 2, r * 4, r * 4);
+  const pulse = active ? 1 + 0.05 * Math.sin(now * 9) : 1;
+  g.save(); g.translate(cx, cy); g.rotate(active ? now * 2.2 : 0);
+  const cg = g.createConicGradient(0, 0, 0);
+  cg.addColorStop(0, C.blue); cg.addColorStop(0.5, C.cyan); cg.addColorStop(1, C.blue);
+  g.strokeStyle = cg; g.globalAlpha = active ? 1 : 0.4; g.lineWidth = 13;
+  g.beginPath(); g.arc(0, 0, r * pulse, 0, Math.PI * 2); g.stroke();
+  g.restore(); g.globalAlpha = 1;
+}
+
+/* chat items: you / call / alexa, laid out bottom-up in the right column */
+function chatScene(now, step) {
+  topbar();
+  const speaking = step.clip.startsWith('a') && now >= step.start && now <= step.end;
+  ring(240, 330, 92, speaking, now);
+  g.font = F(700, 17); g.fillStyle = C.tx; g.textAlign = 'center';
+  g.fillText('Alexa+', 240, 482);
+  g.font = F(500, 13); g.fillStyle = C.dim;
+  g.fillText('simulated voice front end', 240, 504);
+  g.fillText('replies = live server speech', 240, 524);
+  g.textAlign = 'left';
+
+  // collect items since the last clear
+  const idx = steps.indexOf(step);
+  let from = idx; while (from > 0 && !steps[from].clear) from--;
+  const items = [];
+  for (let i = from; i <= idx; i++) {
+    const s = steps[i];
+    if (s.scene !== 'chat' || now < s.start) continue;
+    if (s.you) items.push({ kind: 'you', text: s.you, t: s.start });
+    if (s.call) items.push({ kind: 'call', call: s.call, t: s.start });
+    if (s.alexa) {
+      const prog = Math.min(1, (now - s.start) / Math.max(0.1, s.end - s.start - 0.3));
+      items.push({ kind: 'alexa', text: s.alexa, disp: s.disp, prog, t: s.start + 0.35 });
+    }
+  }
+
+  const X = 440, CW = W - X - 48;
+  let y = 100;
+  for (const it of items) {
+    const a = ease((now - it.t) / 0.35);
+    if (a <= 0) continue;
+    g.globalAlpha = a;
+    if (it.kind === 'you') {
+      const lines = wrap(it.text, CW * 0.72, F(500, 21));
+      const w = Math.min(CW * 0.78, Math.max(...lines.map((l) => g.measureText(l).width)) + 40), h = lines.length * 30 + 26;
+      const x = X + CW - w;
+      rr(x, y, w, h, 16); g.fillStyle = C.you; g.fill(); g.strokeStyle = '#243650'; g.lineWidth = 1; g.stroke();
+      g.fillStyle = C.tx; lines.forEach((l, i) => g.fillText(l, x + 20, y + 36 + i * 30));
+      y += h + 14;
+    } else if (it.kind === 'call') {
+      const args = JSON.stringify(it.call.args);
+      const lines = wrap(args, CW - 60, MONO(15));
+      const h = 44 + lines.length * 21;
+      rr(X, y, CW, h, 10); g.fillStyle = '#07131f'; g.fill(); g.strokeStyle = '#13324a'; g.stroke();
+      g.fillStyle = C.cyan; g.fillRect(X, y, 4, h);
+      g.font = MONO(15); g.fillStyle = C.dim; g.fillText('tools/call →', X + 18, y + 28);
+      g.fillStyle = '#7fd3ff'; g.font = `bold ${MONO(16)}`; g.fillText(it.call.name, X + 128, y + 28);
+      g.font = MONO(15); g.fillStyle = '#9fc0da';
+      lines.forEach((l, i) => g.fillText(l, X + 18, y + 52 + i * 21));
+      y += h + 14;
+    } else {
+      const shown = it.text.slice(0, Math.ceil(it.text.length * it.prog));
+      const all = wrap(it.text, CW - 44, F(500, 21));
+      const hasBadge = !!it.disp;
+      const h = all.length * 31 + 30 + (hasBadge ? 28 : 0);
+      const col = { expected: C.ok, urgent: C.red, call_clinic: C.warn }[it.disp];
+      const bg = { expected: '#0b1a12', urgent: '#1d0e10', call_clinic: '#1a1409' }[it.disp] || C.panel;
+      rr(X, y, CW, h, 16); g.fillStyle = bg; g.fill(); g.strokeStyle = col ? col + '66' : C.line; g.lineWidth = 1.5; g.stroke();
+      let ty = y + 36;
+      if (hasBadge) { g.font = F(800, 14); g.fillStyle = col; g.fillText(it.disp.replace('_', ' ').toUpperCase(), X + 22, y + 30); ty += 28; }
+      const shownLines = wrap(shown, CW - 44, F(500, 21));
+      g.fillStyle = C.tx; shownLines.forEach((l, i) => g.fillText(l, X + 22, ty + i * 31));
+      y += h + 14;
+    }
+    g.globalAlpha = 1;
+  }
+}
+
+function titleScene(now, step) {
+  const p = (now - step.start) / (step.end - step.start);
+  g.textAlign = 'center';
+  g.font = F(300, 92); g.fillStyle = `rgba(232,238,246,${ease(p * 5)})`;
+  g.fillText('2:00 AM', W / 2, 250);
+  const lines = ['A tooth came out this morning.', 'The cheek is swollen. The gauze is soaked.', 'The clinic closed at seven.', 'Normal — or an emergency?'];
+  lines.forEach((l, i) => {
+    const a = ease((p - 0.12 - i * 0.18) * 5);
+    g.font = F(i === 3 ? 700 : 400, i === 3 ? 34 : 28);
+    g.fillStyle = i === 3 ? `rgba(39,215,255,${a})` : `rgba(180,196,214,${a})`;
+    g.fillText(l, W / 2, 350 + i * 56);
+  });
+  g.textAlign = 'left';
+}
+
+function pitchScene(now, step) {
+  topbar(' ');
+  const p = (now - step.start) / (step.end - step.start);
+  g.textAlign = 'center';
+  g.globalAlpha = ease(p * 4);
+  g.font = F(800, 64); g.fillStyle = C.tx; g.fillText('ClinicDesk MCP', W / 2, 250);
+  g.font = F(400, 26); g.fillStyle = C.dim;
+  g.fillText("A self-hosted MCP server that lets Alexa+ run a dental clinic's front desk", W / 2, 305);
+  g.globalAlpha = 1;
+  const chips = ['11 tools', 'Streamable HTTP', 'MCP spec 2025-11-25', 'Every reply phrased for the ear'];
+  g.font = F(600, 21);
+  const ws = chips.map((c) => g.measureText(c).width + 44), gap = 16;
+  let x = (W - ws.reduce((a, b) => a + b, 0) - gap * (chips.length - 1)) / 2;
+  chips.forEach((c, i) => {
+    g.globalAlpha = ease((p - 0.25 - i * 0.08) * 5);
+    rr(x, 370, ws[i], 50, 25); g.fillStyle = '#0d1a2b'; g.fill(); g.strokeStyle = '#1f3b5c'; g.stroke();
+    g.fillStyle = C.cyan; g.fillText(c, x + ws[i] / 2, 403); x += ws[i] + gap;
+  });
+  g.globalAlpha = ease((p - 0.6) * 4);
+  g.font = F(700, 30); g.fillStyle = C.tx;
+  g.fillText("It reads back the clinic's own written protocol — and nothing else.", W / 2, 510);
+  g.globalAlpha = 1; g.textAlign = 'left';
+}
+
+function bugScene(now, step) {
+  topbar('A real bug, kept as the first test');
+  const p = (now - step.start) / (step.end - step.start);
+  const X = 110, CW = W - 220;
+  g.font = F(800, 15); g.fillStyle = C.dim; g.fillText('FIRST VERSION', X, 150);
+  rr(X, 164, CW, 88, 14); g.fillStyle = '#1d0e10'; g.fill(); g.strokeStyle = '#5b1f1f'; g.stroke();
+  g.font = F(500, 24); g.fillStyle = C.tx; g.fillText("“I'm having trouble swallowing and my neck is swelling”", X + 26, 216);
+  g.font = F(800, 24); g.fillStyle = C.red; g.textAlign = 'right'; g.fillText('→ expected ✗', X + CW - 26, 216); g.textAlign = 'left';
+
+  g.globalAlpha = ease((p - 0.38) * 4);
+  g.font = F(800, 15); g.fillStyle = C.dim; g.fillText('NOW', X, 312);
+  rr(X, 326, CW, 88, 14); g.fillStyle = '#0b1a12'; g.fill(); g.strokeStyle = '#1d4a2f'; g.stroke();
+  g.font = F(500, 24); g.fillStyle = C.tx; g.fillText('Airway word + difficulty word, or spread site + swelling', X + 26, 378);
+  g.font = F(800, 24); g.fillStyle = C.ok; g.textAlign = 'right'; g.fillText('→ urgent ✓', X + CW - 26, 378); g.textAlign = 'left';
+  g.globalAlpha = 1;
+
+  g.globalAlpha = ease((p - 0.7) * 4);
+  g.textAlign = 'center'; g.font = F(700, 30); g.fillStyle = C.tx;
+  g.fillText('Test 1 of 36.', W / 2, 500);
+  g.font = F(400, 23); g.fillStyle = C.dim;
+  g.fillText('This server may under-reassure. It may never over-reassure.', W / 2, 545);
+  g.textAlign = 'left'; g.globalAlpha = 1;
+}
+
+function archScene(now, step) {
+  topbar();
+  const p = (now - step.start) / (step.end - step.start);
+  const rules = [
+    ['Concepts, not phrasings', "“can't swallow”, “trouble swallowing”, “hard to swallow” are one emergency."],
+    ['Unrecognised escalates', 'Anything the rules cannot place goes to call_clinic. Silence is not “fine”.'],
+    ['A hard reassurance ceiling', 'Worsening symptoms can never come back as expected.'],
+  ];
+  rules.forEach(([h, b], i) => {
+    const y = 120 + i * 138;
+    g.globalAlpha = ease((p - i * 0.14) * 4);
+    rr(110, y, W - 220, 116, 16); g.fillStyle = C.panel; g.fill(); g.strokeStyle = C.line; g.stroke();
+    g.fillStyle = C.cyan; g.font = F(800, 40); g.fillText(String(i + 1), 146, y + 72);
+    g.fillStyle = C.tx; g.font = F(700, 26); g.fillText(h, 210, y + 50);
+    g.fillStyle = C.dim; g.font = F(400, 20); g.fillText(b, 210, y + 86);
+  });
+  g.globalAlpha = ease((p - 0.55) * 4);
+  g.textAlign = 'center'; g.font = F(600, 20); g.fillStyle = '#7fa3c7';
+  g.fillText('11 tools  ·  36 tests  ·  Cloudflare Workers or Vercel  ·  Supabase  ·  aftercare written by a practising dentist', W / 2, 580);
+  g.textAlign = 'left'; g.globalAlpha = 1;
+}
+
+function outroScene(now, step) {
+  const p = (now - step.start) / Math.max(1, step.end - step.start);
+  g.textAlign = 'center';
+  g.globalAlpha = ease(p * 3);
+  ring(W / 2, 250, 70, true, now);
+  g.font = F(800, 58); g.fillStyle = C.tx; g.fillText('ClinicDesk MCP', W / 2, 410);
+  g.font = F(600, 26); g.fillStyle = C.cyan; g.fillText('clinicdesk-mcp.vercel.app', W / 2, 468);
+  g.font = F(500, 22); g.fillStyle = C.dim; g.fillText('github.com/Y385471/clinicdesk-mcp  ·  MIT', W / 2, 510);
+  g.font = F(400, 17); g.fillStyle = '#5f7187';
+  g.fillText(`Replies captured live from the production server, ${data.captured_at.slice(0, 16).replace('T', ' ')} UTC`, W / 2, 600);
+  g.textAlign = 'left'; g.globalAlpha = 1;
+}
+
+const SCENES = { title: titleScene, pitch: pitchScene, chat: chatScene, bug: bugScene, arch: archScene, outro: outroScene };
+function frame() {
+  const now = t0 === null ? 0 : ac.currentTime - t0;
+  background();
+  let step = steps[0];
+  for (const s of steps) if (now >= s.start - 0.2) step = s;
+  SCENES[step.scene](now, step);
+  if (t0 !== null && now < total) requestAnimationFrame(frame);
+  else if (t0 !== null) finish();
+}
+
+/* -------------------------------------------------------------- playback */
+let rec, chunks = [];
+async function play(record) {
+  if (ac.state === 'suspended') await ac.resume();
+  const dest = ac.createMediaStreamDestination();
+  const start = ac.currentTime + 0.3;
+  for (const s of steps) {
+    const src = ac.createBufferSource(); src.buffer = buffers[s.clip];
+    src.connect(dest); if (!record) src.connect(ac.destination);
+    src.start(start + s.start);
+  }
+  if (record) {
+    const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000, audioBitsPerSecond: 128_000 });
+    chunks = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.start(1000);
+    recording = true;
+  }
+  t0 = start;
+  say(`${record ? 'recording' : 'previewing'} — ${total.toFixed(1)} s`);
+  requestAnimationFrame(frame);
+}
+function finish() {
+  if (!recording) { say('preview done'); t0 = null; return; }
+  recording = false;
+  rec.onstop = async () => {
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    const r = await fetch('/save', { method: 'POST', body: blob });
+    say(`DONE ${await r.text()} (${total.toFixed(1)} s)`);
+    window.__done = true;
+  };
+  setTimeout(() => rec.stop(), 300);
+}
+
+/* ------------------------------------------------------------------ load */
+(async () => {
+  data = await (await fetch('data.json')).json();
+  ac = new AudioContext();
+  const clips = ['n1', 'n2', 'p1', 'a1', 'p2', 'a2', 'n3', 'p3', 'a3', 'p4', 'a4', 'a5', 'n4', 'n5'];
+  await Promise.all(clips.map(async (c) => { buffers[c] = await ac.decodeAudioData(await (await fetch(`audio/${c}.wav`)).arrayBuffer()); }));
+  buildTimeline();
+  window.__total = total;
+  say(`ready — ${steps.length} steps, ${total.toFixed(1)} s`);
+  background(); titleScene(0.5, steps[0]);
+})();
+document.getElementById('preview').onclick = () => play(false);
+document.getElementById('record').onclick = () => play(true);
+// Seek helper for checking individual frames without playing: __show(seconds)
+window.__show = (sec) => { const s0 = t0; t0 = ac.currentTime - sec; background(); let step = steps[0]; for (const s of steps) if (sec >= s.start - 0.2) step = s; SCENES[step.scene](sec, step); t0 = s0; };
+</script>
+</body></html>

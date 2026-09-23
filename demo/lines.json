@@ -1,0 +1,72 @@
+[
+ [
+  "n1",
+  "David",
+  "It is two in the morning. A patient had a tooth out today. Their cheek is swollen, the gauze is soaked, and the clinic closed at seven. Is this normal, or is it an emergency?"
+ ],
+ [
+  "n2",
+  "David",
+  "ClinicDesk is a self-hosted M C P server that lets Alexa plus run a dental clinic front desk, and answer that question safely. It reads back the clinic own written protocol, and nothing else."
+ ],
+ [
+  "p1",
+  "David",
+  "Alexa, I had a tooth out yesterday, and my cheek is swollen."
+ ],
+ [
+  "a1",
+  "Zira",
+  "Swelling on day 1 after a tooth extraction is within what we expect, so nothing is going wrong. Keep going with the aftercare. Call us on +20 2 2404 1180 if it changes direction and starts getting worse instead of better."
+ ],
+ [
+  "p2",
+  "David",
+  "Alexa, I am having trouble swallowing, and my neck is swelling."
+ ],
+ [
+  "a2",
+  "Zira",
+  "That needs to be seen now, not tomorrow. Please call the emergency line on +20 100 555 0199 straight away, and if you are struggling to breathe or swallow, go to the nearest emergency department instead of waiting for a call back."
+ ],
+ [
+  "n3",
+  "David",
+  "That second answer is the reason this project exists. Our first version got it wrong. It said: expected. It only knew the exact phrase, cannot swallow. Now urgency is decided by concepts, not phrasings, and that bug is test number one, of thirty six."
+ ],
+ [
+  "p3",
+  "David",
+  "Alexa, I need to book a check up."
+ ],
+ [
+  "a3",
+  "Zira",
+  "For Routine check-up and cleaning, which takes about 30 minutes, I have Wednesday the 23rd at 3:15 pm with Dr. Karim Nabil, or Wednesday the 23rd at 3:30 pm with Dr. Karim Nabil. Would either of those work?"
+ ],
+ [
+  "p4",
+  "David",
+  "The first one. My number is zero one zero zero, one two three, four five six seven."
+ ],
+ [
+  "a4",
+  "Zira",
+  "Found you, Mona Farouk. I can see a note on your file about penicillin allergy, so I will flag that to the dentist."
+ ],
+ [
+  "a5",
+  "Zira",
+  "Booked. Routine check-up and cleaning on Wednesday the 23rd at 3:15 pm with Dr. Karim Nabil. Anything else?"
+ ],
+ [
+  "n4",
+  "David",
+  "Eleven tools, over streamable H T T P, on M C P spec twenty twenty five, eleven twenty five. Every tool returns a line written for the ear. Unrecognised symptoms escalate, and nothing that is getting worse is ever called normal."
+ ],
+ [
+  "n5",
+  "David",
+  "ClinicDesk. Open source, and live right now at clinic desk M C P dot vercel dot app."
+ ]
+]

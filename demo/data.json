@@ -1,0 +1,61 @@
+{
+  "captured_at": "2026-09-23T14:03:03.113Z",
+  "protocol": "2025-11-25",
+  "tool_count": 11,
+  "turns": [
+    {
+      "name": "check_symptom",
+      "args": {
+        "symptom": "I had a tooth out yesterday and my cheek is swollen",
+        "procedure": "EXTRACTION",
+        "days_since": 1
+      },
+      "speech": "Swelling on day 1 after a tooth extraction is within what we expect, so nothing is going wrong. Keep going with the aftercare. Call us on +20 2 2404 1180 if it changes direction and starts getting worse instead of better.",
+      "disposition": "expected",
+      "isError": false
+    },
+    {
+      "name": "check_symptom",
+      "args": {
+        "symptom": "I'm having trouble swallowing and my neck is swelling",
+        "procedure": "EXTRACTION",
+        "days_since": 2
+      },
+      "speech": "That needs to be seen now, not tomorrow. Please call the emergency line on +20 100 555 0199 straight away, and if you are struggling to breathe or swallow, go to the nearest emergency department instead of waiting for a call back.",
+      "disposition": "urgent",
+      "isError": false
+    },
+    {
+      "name": "find_appointment_slots",
+      "args": {
+        "procedure": "CHECKUP",
+        "days_ahead": 7,
+        "limit": 3
+      },
+      "speech": "For Routine check-up and cleaning, which takes about 30 minutes, I have Wednesday the 23rd at 3:15 pm with Dr. Karim Nabil, or Wednesday the 23rd at 3:30 pm with Dr. Karim Nabil. Would either of those work?",
+      "disposition": null,
+      "isError": false
+    },
+    {
+      "name": "find_patient",
+      "args": {
+        "phone": "0100 123 4567"
+      },
+      "speech": "Found you, Mona Farouk. I can see a note on your file about penicillin allergy, so I will flag that to the dentist.",
+      "disposition": null,
+      "isError": false
+    },
+    {
+      "name": "book_appointment",
+      "args": {
+        "patient_id": 1,
+        "procedure": "CHECKUP",
+        "starts_at": "2026-09-23T15:15:00.000Z",
+        "provider_id": 3
+      },
+      "speech": "Booked. Routine check-up and cleaning on Wednesday the 23rd at 3:15 pm with Dr. Karim Nabil. Anything else?",
+      "disposition": null,
+      "isError": false
+    }
+  ]
+}

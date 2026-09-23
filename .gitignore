@@ -172,3 +172,7 @@ dist
 
 .vercel
 .env*
+
+# demo video build output (the recording is large; upload it, do not commit it)
+demo/*.webm
+demo/audio/
