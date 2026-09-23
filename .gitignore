@@ -176,3 +176,6 @@ dist
 # demo video build output (the recording is large; upload it, do not commit it)
 demo/*.webm
 demo/audio/
+
+demo/*.mp4
+demo/story.json

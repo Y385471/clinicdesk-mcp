@@ -18,7 +18,7 @@ button{font:inherit;padding:8px 16px;border-radius:8px;border:0;background:#27d7
 </style></head>
 <body>
 <canvas id="c" width="1280" height="720"></canvas>
-<div class="bar"><button id="preview">Preview</button><button id="record">Record</button><span id="log">loading…</span></div>
+<div class="bar"><button id="preview">Preview</button><button id="record">Record</button><button id="mp4">Export MP4</button><span id="log">loading…</span></div>
 <script>
 const W = 1280, H = 720;
 const cv = document.getElementById('c'), g = cv.getContext('2d');
@@ -333,5 +333,70 @@ document.getElementById('preview').onclick = () => play(false);
 document.getElementById('record').onclick = () => play(true);
 // Seek helper for checking individual frames without playing: __show(seconds)
 window.__show = (sec) => { const s0 = t0; t0 = ac.currentTime - sec; background(); let step = steps[0]; for (const s of steps) if (sec >= s.start - 0.2) step = s; SCENES[step.scene](sec, step); t0 = s0; };
+</script>
+
+<script type="module">
+/*
+  Offline MP4 export. Frames are drawn at exact timestamps (i / FPS) instead of
+  in real time, and the soundtrack is mixed with an OfflineAudioContext on the
+  same timeline, so the file is frame-accurate, has a real duration and seek
+  index (MediaRecorder WebM has neither), and plays anywhere: H.264 + AAC.
+*/
+import { Muxer, ArrayBufferTarget } from 'https://cdn.jsdelivr.net/npm/mp4-muxer@5/+esm';
+
+const FPS = 30, RATE = 48000;
+
+async function exportMp4() {
+  const logEl = document.getElementById('log');
+  const frames = Math.ceil(total * FPS);
+
+  // 1. soundtrack
+  const off = new OfflineAudioContext(1, Math.ceil(total * RATE), RATE);
+  for (const s of steps) {
+    const src = off.createBufferSource(); src.buffer = buffers[s.clip];
+    src.connect(off.destination); src.start(s.start);
+  }
+  const mix = await off.startRendering();
+
+  // 2. muxer + encoders
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target, fastStart: 'in-memory',
+    video: { codec: 'avc', width: 1280, height: 720, frameRate: FPS },
+    audio: { codec: 'aac', numberOfChannels: 1, sampleRate: RATE },
+  });
+  const venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: (e) => { throw e; } });
+  venc.configure({ codec: 'avc1.640028', width: 1280, height: 720, bitrate: 4_000_000, framerate: FPS });
+  const aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: (e) => { throw e; } });
+  aenc.configure({ codec: 'mp4a.40.2', sampleRate: RATE, numberOfChannels: 1, bitrate: 128000 });
+
+  // 3. audio in 1024-sample packets
+  const pcm = mix.getChannelData(0);
+  for (let i = 0; i < pcm.length; i += 1024) {
+    const slice = pcm.subarray(i, Math.min(i + 1024, pcm.length));
+    const ad = new AudioData({ format: 'f32-planar', sampleRate: RATE, numberOfFrames: slice.length, numberOfChannels: 1, timestamp: Math.round(i * 1e6 / RATE), data: slice });
+    aenc.encode(ad); ad.close();
+  }
+
+  // 4. video, frame by frame on the virtual clock
+  for (let i = 0; i < frames; i++) {
+    const now = i / FPS;
+    background();
+    let step = steps[0];
+    for (const s of steps) if (now >= s.start - 0.2) step = s;
+    SCENES[step.scene](now, step);
+    const vf = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+    venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 }); vf.close();
+    if (venc.encodeQueueSize > 12) await new Promise((r) => setTimeout(r, 0));
+    if (i % 150 === 0) logEl.textContent = `encoding ${Math.round((i / frames) * 100)}%`;
+  }
+  await venc.flush(); await aenc.flush();
+  muxer.finalize();
+
+  const res = await fetch('/save-mp4', { method: 'POST', body: target.buffer });
+  logEl.textContent = `MP4 ${await res.text()} · ${frames} frames · ${total.toFixed(1)} s`;
+  window.__mp4 = logEl.textContent;
+}
+document.getElementById('mp4').onclick = () => exportMp4().catch((e) => { document.getElementById('log').textContent = 'MP4 failed: ' + e; window.__mp4 = 'failed: ' + e; });
 </script>
 </body></html>

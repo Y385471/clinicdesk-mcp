@@ -10,13 +10,14 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
 
 createServer(async (req, res) => {
 	try {
-		if (req.method === 'POST' && req.url === '/save') {
+		if (req.method === 'POST' && (req.url === '/save' || req.url === '/save-mp4')) {
 			const chunks = [];
 			for await (const c of req) chunks.push(c);
 			const buf = Buffer.concat(chunks);
-			await writeFile(join(root, 'clinicdesk-demo.webm'), buf);
+			const name = req.url === '/save' ? 'clinicdesk-demo.webm' : 'clinicdesk-demo.mp4';
+			await writeFile(join(root, name), buf);
 			res.writeHead(200).end(`saved ${buf.length} bytes`);
-			console.log(`saved clinicdesk-demo.webm (${buf.length} bytes)`);
+			console.log(`saved ${name} (${buf.length} bytes)`);
 			return;
 		}
 		const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^([/\\])+/, '');
